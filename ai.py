@@ -59,32 +59,42 @@ def _system():
     return kb + "\n\n## Игры в каталоге\n" + _games()
 
 
+# Запасные модели: если одна перегружена (503) или исчезла (404) — пробуем следующую
+MODELS = [MODEL] + [m for m in ("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest",
+                                "gemini-2.5-flash-lite") if m != MODEL]
+
+
 def _ask(prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-    body = {
+    body = json.dumps({
         "systemInstruction": {"parts": [{"text": _system()}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.4, "maxOutputTokens": 2048},
-    }
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", "x-goog-api-key": KEY})
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                data = json.loads(r.read().decode())
-            parts = data["candidates"][0]["content"]["parts"]
-            text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
-            time.sleep(4)  # бесплатный тариф: не больше ~15 запросов в минуту
-            return text
-        except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < 2:
-                time.sleep(30)
-                continue
-            print("   Gemini ошибка:", e.code, e.read().decode(errors="replace")[:300])
-            return None
-        except Exception as e:
-            print("   Gemini ошибка:", e)
-            return None
+    }).encode()
+    for model in list(MODELS):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        for attempt in range(2):
+            req = urllib.request.Request(url, data=body, method="POST",
+                                         headers={"Content-Type": "application/json", "x-goog-api-key": KEY})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    data = json.loads(r.read().decode())
+                parts = data["candidates"][0]["content"]["parts"]
+                text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+                if model != MODELS[0]:  # запомним рабочую модель до конца запуска
+                    MODELS.remove(model)
+                    MODELS.insert(0, model)
+                time.sleep(4)  # бесплатный тариф: не больше ~15 запросов в минуту
+                return text
+            except urllib.error.HTTPError as e:
+                msg = e.read().decode(errors="replace")[:200].replace("\n", " ")
+                if e.code in (429, 500, 503) and attempt == 0:
+                    time.sleep(20)
+                    continue
+                print(f"   Gemini {model}: ошибка {e.code} {msg}")
+                break  # следующая модель
+            except Exception as e:
+                print(f"   Gemini {model}: ошибка {e}")
+                break
     return None
 
 
