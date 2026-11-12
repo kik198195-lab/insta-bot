@@ -27,7 +27,12 @@ _MONEY = re.compile(r"\d[\d\s]*\s*(₸|тг|тенге|₽|руб|сум|сом)
 _TOOLS = re.compile(r"chat\s?gpt|openai|\bgpt|claude|anthropic|gemini|deepseek|copilot|"
                     r"cursor|lovable|bolt\.new|v0\.dev|replit|canva|wordwall|genially|"
                     r"learningapps|kahoot|tilda|python|javascript", re.I)
-_PAY = re.compile(r"\b\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\b|\+?\d[\d\s()-]{9,}\d", re.I)  # карты/телефоны
+_PAY = re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b|\+?[78][\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}\b")  # карты/телефоны
+
+
+def _risky(out):
+    plain = re.sub(r"https?://\S+", "", out)  # разрешённые ссылки (WhatsApp) не считаем номером
+    return _TOOLS.search(plain) or _PAY.search(plain)
 
 _games_cache = None
 
@@ -60,15 +65,15 @@ def _system():
 
 
 # Запасные модели: если одна перегружена (503) или исчезла (404) — пробуем следующую
-MODELS = [MODEL] + [m for m in ("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest",
-                                "gemini-2.5-flash-lite") if m != MODEL]
+MODELS = [MODEL] + [m for m in ("gemini-flash-latest", "gemini-3.8-flash", "gemini-flash-lite-latest",
+                                "gemini-3.5-flash-lite") if m != MODEL]
 
 
 def _ask(prompt):
     body = json.dumps({
         "systemInstruction": {"parts": [{"text": _system()}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 2048},
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
     }).encode()
     for model in list(MODELS):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -83,7 +88,7 @@ def _ask(prompt):
                 if model != MODELS[0]:  # запомним рабочую модель до конца запуска
                     MODELS.remove(model)
                     MODELS.insert(0, model)
-                time.sleep(4)  # бесплатный тариф: не больше ~15 запросов в минуту
+                time.sleep(7)  # бесплатный тариф: не больше ~10 запросов в минуту
                 return text
             except urllib.error.HTTPError as e:
                 msg = e.read().decode(errors="replace")[:200].replace("\n", " ")
@@ -116,7 +121,7 @@ def comment_reply(text):
     if "ПЕРЕДАТЬ" in out:
         return HANDOFF_COMMENT
     out = _clean(out)
-    if _MONEY.search(out) or _TOOLS.search(out) or _PAY.search(out) or "http" in out or len(out) > 300:
+    if _MONEY.search(out) or _risky(out) or "http" in out or len(out) > 300:
         print("   ответ нейросети отклонён фильтром:", out[:120])
         return ""
     return out
@@ -138,7 +143,7 @@ def dm_reply(text, history=""):
         return HANDOFF_DM
     out = _clean(out)
     links = re.findall(r"https?://\S+", out)
-    if _TOOLS.search(out) or _PAY.search(out) or len(out) > 1000 or \
+    if _risky(out) or len(out) > 1000 or \
             any(not (l.startswith(CATALOG.rstrip("/")) or l.startswith(WHATSAPP)) for l in links):
         print("   ответ нейросети отклонён фильтром:", out[:120])
         return ""
