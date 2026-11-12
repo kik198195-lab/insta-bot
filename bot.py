@@ -22,7 +22,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-from replies import classify_comment, classify_dm
+import ai
+from replies import PRIVATE_REPLY_CATALOG, classify_comment, classify_dm, needs_ai
 
 API = "https://graph.facebook.com/v23.0"
 TOKEN = os.environ.get("IG_TOKEN", "").strip()
@@ -95,11 +96,21 @@ def handle_comments(me):
             replies = c.get("replies", {}).get("data", [])
             if any(r.get("username") == me["username"] for r in replies):
                 continue  # уже ответили
-            decision = classify_comment(c.get("text", ""))
+            text = c.get("text", "")
+            decision = classify_comment(text)
             if not decision:
                 continue
             public, private = decision
-            text_preview = c.get("text", "").replace("\n", " ")[:60]
+            if ai.enabled() and needs_ai(text):
+                r = ai.comment_reply(text)
+                if r is None:
+                    print(f"   пропуск (нейросеть: спам) @{user}: {text[:60]}")
+                    continue
+                if r:
+                    public = r
+                    p = ai.dm_reply(text)
+                    private = None if p is None else (p or private or PRIVATE_REPLY_CATALOG)
+            text_preview = text.replace("\n", " ")[:60]
             ok = send(f"коммент @{user}: «{text_preview}» → {public}",
                       "POST", f"{c['id']}/replies", {"message": f"@{user} {public}"})
             if ok and private and user not in dm_sent:
@@ -138,10 +149,20 @@ def handle_dms(me):
             if x in mine:
                 break
             client_text.append(x.get("message", ""))
-        reply = classify_dm(" ".join(client_text), first_contact=not mine)
+        text = "\n".join(reversed(client_text))
+        reply = classify_dm(text, first_contact=not mine)
+        if ai.enabled() and needs_ai(text):
+            history = "\n".join(
+                ("Я: " if x in mine else "Клиент: ") + x.get("message", "")
+                for x in reversed(msgs[len(client_text):len(client_text) + 8]))
+            r = ai.dm_reply(text, history)
+            if r is None:
+                print(f"   пропуск (нейросеть: спам): {text[:60]}")
+                continue
+            reply = r or reply
         if not reply:
             continue
-        preview = " ".join(client_text).replace("\n", " ")[:60]
+        preview = text.replace("\n", " ")[:60]
         send(f"директ @{sender.get('username', sender.get('id'))}: «{preview}» → {reply[:50]}…",
              "POST", f"{me['page']}/messages",
              body={"recipient": {"id": sender["id"]}, "message": {"text": reply}})
@@ -157,7 +178,8 @@ def main():
     if not ig:
         sys.exit("К этой Странице Facebook не привязан профессиональный Instagram")
     me = {"id": ig["id"], "username": ig["username"], "page": page["id"]}
-    print(f"Аккаунт @{me['username']}  {'(пробный режим)' if DRY else ''}")
+    print(f"Аккаунт @{me['username']}  {'(пробный режим)' if DRY else ''}"
+          f"  нейросеть: {'вкл (' + ai.MODEL + ')' if ai.enabled() else 'выкл'}")
     errors = 0
     for name, fn in (("Комментарии", handle_comments), ("Директ", handle_dms)):
         try:
