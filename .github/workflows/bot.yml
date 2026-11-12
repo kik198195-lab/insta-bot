@@ -1,0 +1,25 @@
+name: Instagram автоответчик
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # каждые 10 минут (GitHub иногда запускает с задержкой)
+  workflow_dispatch:          # кнопка «Run workflow» для ручного запуска
+
+concurrency:
+  group: insta-bot
+  cancel-in-progress: false
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ответить на комментарии и директ
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+        run: python bot.py
