@@ -80,7 +80,7 @@ def send(desc, method, path, params=None, body=None):
 
 def handle_comments(me):
     media = call("GET", f"{me['id']}/media", {"fields": "id,caption,timestamp,permalink", "limit": POSTS})["data"]
-    done = 0
+    done, dm_sent = 0, set()
     for m in media:
         comments = get_all(f"{m['id']}/comments", {
             "fields": "id,text,timestamp,username,from,replies{id,username}",
@@ -102,7 +102,8 @@ def handle_comments(me):
             text_preview = c.get("text", "").replace("\n", " ")[:60]
             ok = send(f"коммент @{user}: «{text_preview}» → {public}",
                       "POST", f"{c['id']}/replies", {"message": f"@{user} {public}"})
-            if ok and private:
+            if ok and private and user not in dm_sent:
+                dm_sent.add(user)
                 send(f"   личное сообщение @{user}", "POST", f"{me['page']}/messages",
                      body={"recipient": {"comment_id": c["id"]}, "message": {"text": private}})
             done += 1
@@ -115,6 +116,7 @@ def handle_dms(me):
         "fields": "id,updated_time,messages.limit(20){id,from,message,created_time}",
         "limit": 25,
     }).get("data", [])
+    print(f"Переписок в директе проверено: {len(convs)}")
     done = 0
     for cv in convs:
         msgs = cv.get("messages", {}).get("data", [])  # новые — первыми
