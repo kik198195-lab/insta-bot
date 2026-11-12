@@ -1,0 +1,25 @@
+name: Продление токена Instagram
+
+# Токен Instagram живёт 60 дней. Раз в неделю продлеваем его и сохраняем
+# обратно в секрет IG_TOKEN — тогда бот работает бесконечно.
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # каждый понедельник
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Продлить и сохранить токен
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          NEW=$(curl -sf "https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${IG_TOKEN}" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+          test -n "$NEW"
+          echo "::add-mask::$NEW"
+          gh secret set IG_TOKEN --repo "$REPO" --body "$NEW"
+          echo "Токен продлён"
