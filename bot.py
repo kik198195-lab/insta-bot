@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """Бесплатный автоответчик Instagram: комментарии + директ.
 
-Работает через официальный Instagram API (graph.instagram.com).
+Работает через официальный Instagram Graph API (graph.facebook.com)
+от имени Страницы Facebook, к которой привязан Instagram.
 Запуск: python bot.py   (переменные окружения ниже)
 
-  IG_TOKEN   — токен доступа (обязательно)
+  IG_TOKEN   — маркер доступа Страницы (бессрочный, обязательно)
   DRY_RUN    — "1": только показать, что бот ответил бы, ничего не отправлять
   POSTS      — сколько последних публикаций проверять (по умолчанию 15)
   MAX_AGE_H  — отвечать только на комментарии моложе N часов (по умолчанию 72)
@@ -23,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 from replies import classify_comment, classify_dm
 
-API = "https://graph.instagram.com/v23.0"
+API = "https://graph.facebook.com/v23.0"
 TOKEN = os.environ.get("IG_TOKEN", "").strip()
 DRY = os.environ.get("DRY_RUN", "0") == "1"
 POSTS = int(os.environ.get("POSTS", "15"))
@@ -78,7 +79,7 @@ def send(desc, method, path, params=None, body=None):
 
 
 def handle_comments(me):
-    media = call("GET", "me/media", {"fields": "id,caption,timestamp,permalink", "limit": POSTS})["data"]
+    media = call("GET", f"{me['id']}/media", {"fields": "id,caption,timestamp,permalink", "limit": POSTS})["data"]
     done = 0
     for m in media:
         comments = get_all(f"{m['id']}/comments", {
@@ -102,14 +103,14 @@ def handle_comments(me):
             ok = send(f"коммент @{user}: «{text_preview}» → {public}",
                       "POST", f"{c['id']}/replies", {"message": f"@{user} {public}"})
             if ok and private:
-                send(f"   личное сообщение @{user}", "POST", "me/messages",
+                send(f"   личное сообщение @{user}", "POST", f"{me['page']}/messages",
                      body={"recipient": {"comment_id": c["id"]}, "message": {"text": private}})
             done += 1
     return done
 
 
 def handle_dms(me):
-    convs = call("GET", "me/conversations", {
+    convs = call("GET", f"{me['page']}/conversations", {
         "platform": "instagram",
         "fields": "id,updated_time,messages.limit(20){id,from,message,created_time}",
         "limit": 25,
@@ -140,7 +141,7 @@ def handle_dms(me):
             continue
         preview = " ".join(client_text).replace("\n", " ")[:60]
         send(f"директ @{sender.get('username', sender.get('id'))}: «{preview}» → {reply[:50]}…",
-             "POST", "me/messages",
+             "POST", f"{me['page']}/messages",
              body={"recipient": {"id": sender["id"]}, "message": {"text": reply}})
         done += 1
     return done
@@ -149,9 +150,11 @@ def handle_dms(me):
 def main():
     if not TOKEN:
         sys.exit("Нет токена: задайте переменную IG_TOKEN")
-    me = call("GET", "me", {"fields": "id,user_id,username"})
-    # в сообщениях отправитель указывается через user_id (IGSID аккаунта)
-    me["id"] = me.get("user_id", me["id"])
+    page = call("GET", "me", {"fields": "id,name,instagram_business_account{id,username}"})
+    ig = page.get("instagram_business_account")
+    if not ig:
+        sys.exit("К этой Странице Facebook не привязан профессиональный Instagram")
+    me = {"id": ig["id"], "username": ig["username"], "page": page["id"]}
     print(f"Аккаунт @{me['username']}  {'(пробный режим)' if DRY else ''}")
     errors = 0
     for name, fn in (("Комментарии", handle_comments), ("Директ", handle_dms)):
