@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "*/10 * * * *"   # каждые 10 минут (GitHub иногда запускает с задержкой)
   workflow_dispatch:          # кнопка «Run workflow» для ручного запуска
+    inputs:
+      mode:
+        description: "bot — обычная работа, test-ai — проверить нейросеть (ничего не отправляет)"
+        type: choice
+        options: [bot, test-ai]
+        default: bot
 
 concurrency:
   group: insta-bot
@@ -12,7 +18,7 @@ concurrency:
 jobs:
   reply:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,4 +28,8 @@ jobs:
         env:
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
           DRY_RUN: ${{ vars.DRY_RUN }}
-        run: python bot.py
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          AI_ON: ${{ vars.AI_ON }}
+        run: |
+          if [ "${{ inputs.mode }}" = "test-ai" ]; then python test_ai.py; else python bot.py; fi
