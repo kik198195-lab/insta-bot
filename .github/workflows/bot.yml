@@ -6,9 +6,9 @@ on:
   workflow_dispatch:          # кнопка «Run workflow» для ручного запуска
     inputs:
       mode:
-        description: "bot — обычная работа, test-ai — проверить нейросеть (ничего не отправляет)"
+        description: "bot — обычная работа, test-ai — проверить нейросеть, check — поиск конкурента (ничего не отправляют)"
         type: choice
-        options: [bot, test-ai]
+        options: [bot, test-ai, check]
         default: bot
 
 concurrency:
@@ -32,4 +32,8 @@ jobs:
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           AI_ON: ${{ vars.AI_ON }}
         run: |
-          if [ "${{ inputs.mode }}" = "test-ai" ]; then python test_ai.py; else python bot.py; fi
+          case "${{ inputs.mode }}" in
+            test-ai) python test_ai.py ;;
+            check) python check.py ;;
+            *) python bot.py ;;
+          esac
