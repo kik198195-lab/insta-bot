@@ -11,6 +11,13 @@ import re
 CATALOG = "https://kik198195-lab.github.io/katalog-igr/"
 WHATSAPP = "https://wa.me/77767850525"
 
+# ---------- СКРЫТИЕ КОММЕНТАРИЕВ ----------
+# "on" — скрывать, "preview" — только показать в журнале, что скрыл бы, "off" — не скрывать
+HIDE_MODE = "preview"
+# Аккаунты конкурентов: их комментарии скрываются, бот им не отвечает (ник маленькими буквами, без @)
+COMPETITORS = {"margarita_diary_"}
+_OUR_NUMBERS = ("77767850525", "87767850525")
+
 # ---------- ОТВЕТЫ В КОММЕНТАРИЯХ (без цен!) ----------
 COMMENT_REPLY_INTEREST = "Отправила каталог игр вам в директ 📩 Также он есть в шапке профиля ❤️"
 COMMENT_REPLY_THANKS = "Спасибо большое 🥰 Каталог игр — в шапке профиля ❤️"
@@ -83,6 +90,26 @@ def _only_mentions(text):
     """Комментарий состоит только из отметок друзей (розыгрыши) — игнорируем."""
     stripped = re.sub(r"@[\w.]+", "", text).strip()
     return text.strip().startswith("@") and len(stripped) < 3
+
+
+def foreign_contact(text):
+    """В комментарии чужой номер телефона или ссылка на WhatsApp/Telegram."""
+    t = text or ""
+    if re.search(r"wa\.me/|whatsapp|ватсап|вацап|t\.me/|телеграм|telegram", t, re.I) and \
+            not any(n in re.sub(r"\D", "", t) for n in _OUR_NUMBERS):
+        return True
+    for num in re.findall(r"\+?\d[\d\s()\-]{8,}\d", t):
+        digits = re.sub(r"\D", "", num)
+        if len(digits) >= 10 and digits not in _OUR_NUMBERS:
+            return True
+    return False
+
+
+def is_buyer(text):
+    """Комментарий человека, который хочет купить/узнать подробности (его прячем после ответа).
+    Благодарности и эмодзи («🔥», «Класс») остаются видны всем."""
+    d = classify_comment(text)
+    return bool(d and d[1]) or needs_ai(text)
 
 
 def _words(t):

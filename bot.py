@@ -23,7 +23,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import ai
-from replies import PRIVATE_REPLY_CATALOG, classify_comment, classify_dm, needs_ai
+from replies import (COMPETITORS, HIDE_MODE, PRIVATE_REPLY_CATALOG, classify_comment, classify_dm,
+                     foreign_contact, is_buyer, needs_ai)
 
 API = "https://graph.facebook.com/v23.0"
 TOKEN = os.environ.get("IG_TOKEN", "").strip()
@@ -32,6 +33,7 @@ POSTS = int(os.environ.get("POSTS", "15"))
 MAX_AGE = timedelta(hours=int(os.environ.get("MAX_AGE_H", "72")))
 NOW = datetime.now(timezone.utc)
 DM_WINDOW = timedelta(hours=24)  # Instagram разрешает писать только в течение 24 ч
+HIDE_AGE = timedelta(days=30)    # скрываем комментарии не старше 30 дней
 
 
 def call(method, path, params=None, body=None):
@@ -79,24 +81,48 @@ def send(desc, method, path, params=None, body=None):
         return False
 
 
+def hide(c, user, why):
+    """Скрыть комментарий: его будут видеть только автор и владелец аккаунта."""
+    preview = c.get("text", "").replace("\n", " ")[:50]
+    desc = f"скрыт коммент @{user} ({why}): «{preview}»"
+    if HIDE_MODE != "on":
+        print("[ПРОБНО-СКРЫТИЕ] " + desc)
+        return
+    send(desc, "POST", c["id"], {"hide": "true"})
+
+
 def handle_comments(me):
     media = call("GET", f"{me['id']}/media", {"fields": "id,caption,timestamp,permalink", "limit": POSTS})["data"]
     done, dm_sent = 0, set()
     for m in media:
         comments = get_all(f"{m['id']}/comments", {
-            "fields": "id,text,timestamp,username,from,replies{id,username}",
+            "fields": "id,text,timestamp,username,from,hidden,replies{id,username}",
             "limit": 50,
         })
         for c in comments:
             user = c.get("username") or c.get("from", {}).get("username", "")
             if user == me["username"]:
                 continue
-            if NOW - ts(c["timestamp"]) > MAX_AGE:
-                continue
+            text = c.get("text", "")
+            age = NOW - ts(c["timestamp"])
+            hidden = c.get("hidden", False)
+            if HIDE_MODE != "off" and age <= HIDE_AGE:
+                if user.lower() in COMPETITORS:
+                    if not hidden:
+                        hide(c, user, "конкурент")
+                    continue
+                if foreign_contact(text):
+                    if not hidden:
+                        hide(c, user, "чужой номер/ссылка")
+                    continue
             replies = c.get("replies", {}).get("data", [])
             if any(r.get("username") == me["username"] for r in replies):
-                continue  # уже ответили
-            text = c.get("text", "")
+                # уже ответили — покупательский комментарий прячем от чужих глаз
+                if HIDE_MODE != "off" and not hidden and age <= HIDE_AGE and is_buyer(text):
+                    hide(c, user, "покупатель")
+                continue
+            if age > MAX_AGE:
+                continue
             decision = classify_comment(text)
             if not decision:
                 continue
@@ -117,6 +143,8 @@ def handle_comments(me):
                 dm_sent.add(user)
                 send(f"   личное сообщение @{user}", "POST", f"{me['page']}/messages",
                      body={"recipient": {"comment_id": c["id"]}, "message": {"text": private}})
+            if ok and HIDE_MODE != "off" and is_buyer(text):
+                hide(c, user, "покупатель")
             done += 1
     return done
 
