@@ -34,6 +34,8 @@ MAX_AGE = timedelta(hours=int(os.environ.get("MAX_AGE_H", "72")))
 NOW = datetime.now(timezone.utc)
 DM_WINDOW = timedelta(hours=24)  # Instagram разрешает писать только в течение 24 ч
 HIDE_AGE = timedelta(days=30)    # скрываем комментарии не старше 30 дней
+HIDE_PER_RUN = 40                # не больше 40 скрытий за запуск (старые — постепенно)
+hidden_count = 0
 
 
 def call(method, path, params=None, body=None):
@@ -83,6 +85,10 @@ def send(desc, method, path, params=None, body=None):
 
 def hide(c, user, why):
     """Скрыть комментарий: его будут видеть только автор и владелец аккаунта."""
+    global hidden_count
+    if hidden_count >= HIDE_PER_RUN:
+        return  # остальные скроем при следующих запусках
+    hidden_count += 1
     preview = c.get("text", "").replace("\n", " ")[:50]
     desc = f"скрыт коммент @{user} ({why}): «{preview}»"
     if HIDE_MODE != "on":
