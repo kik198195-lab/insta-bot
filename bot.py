@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 import ai
 from replies import (COMPETITORS, HIDE_MODE, PRIVATE_REPLY_CATALOG, classify_comment, classify_dm,
-                     foreign_contact, is_buyer, needs_ai)
+                     foreign_contact, is_buyer, needs_ai, with_warning)
 
 API = "https://graph.facebook.com/v23.0"
 TOKEN = os.environ.get("IG_TOKEN", "").strip()
@@ -148,7 +148,7 @@ def handle_comments(me):
             if ok and private and user not in dm_sent:
                 dm_sent.add(user)
                 send(f"   личное сообщение @{user}", "POST", f"{me['page']}/messages",
-                     body={"recipient": {"comment_id": c["id"]}, "message": {"text": private}})
+                     body={"recipient": {"comment_id": c["id"]}, "message": {"text": with_warning(private)}})
             if ok and HIDE_MODE != "off" and is_buyer(text):
                 hide(c, user, "покупатель")
             done += 1
@@ -199,7 +199,7 @@ def handle_dms(me):
         preview = text.replace("\n", " ")[:60]
         send(f"директ @{sender.get('username', sender.get('id'))}: «{preview}» → {reply[:50]}…",
              "POST", f"{me['page']}/messages",
-             body={"recipient": {"id": sender["id"]}, "message": {"text": reply}})
+             body={"recipient": {"id": sender["id"]}, "message": {"text": with_warning(reply)}})
         done += 1
     return done
 

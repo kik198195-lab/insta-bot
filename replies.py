@@ -11,9 +11,18 @@ import re
 CATALOG = "https://kik198195-lab.github.io/katalog-igr/"
 WHATSAPP = "https://wa.me/77767850525"
 
+# Добавляется в конец каждого личного сообщения бота
+WARNING = ("⚠️ Я пишу только с этого аккаунта @dlya.urokov23, мой WhatsApp: 8 776 785 05 25. "
+           "Если вам пишут от моего имени с других номеров — это не я.")
+
+
+def with_warning(text):
+    return text.rstrip() + "\n\n" + WARNING
+
+
 # ---------- СКРЫТИЕ КОММЕНТАРИЕВ ----------
 # "on" — скрывать, "preview" — только показать в журнале, что скрыл бы, "off" — не скрывать
-HIDE_MODE = "preview"
+HIDE_MODE = "off"
 # Аккаунты конкурентов: их комментарии скрываются, бот им не отвечает (ник маленькими буквами, без @)
 COMPETITORS = {"margarita_diary_"}
 _OUR_NUMBERS = ("77767850525", "87767850525")

@@ -143,7 +143,7 @@ def dm_reply(text, history=""):
         return HANDOFF_DM
     out = _clean(out)
     links = re.findall(r"https?://\S+", out)
-    if _risky(out) or len(out) > 1000 or \
+    if _risky(out) or len(out) > 800 or \
             any(not (l.startswith(CATALOG.rstrip("/")) or l.startswith(WHATSAPP)) for l in links):
         print("   ответ нейросети отклонён фильтром:", out[:120])
         return ""
