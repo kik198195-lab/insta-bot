@@ -210,6 +210,24 @@ def handle_dms(me):
     return done
 
 
+PASSES = int(os.environ.get("PASSES", "2"))   # проверок за один запуск
+GAP = int(os.environ.get("GAP_SEC", "300"))   # пауза между проверками: 5 минут
+LAST_START = 6 * 60   # GitHub обрывает запуск через 8 минут — позже 6-й минуты не начинаем
+
+
+def one_pass(me):
+    global NOW
+    NOW = datetime.now(timezone.utc)
+    errors = 0
+    for name, fn in (("Комментарии", handle_comments), ("Директ", handle_dms)):
+        try:
+            print(f"{name}: ответов — {fn(me)}")
+        except RuntimeError as e:
+            errors += 1
+            print(f"{name}: ошибка — {e}")
+    return errors
+
+
 def main():
     if not TOKEN:
         sys.exit("Нет токена: задайте переменную IG_TOKEN")
@@ -220,13 +238,14 @@ def main():
     me = {"id": ig["id"], "username": ig["username"], "page": page["id"]}
     print(f"Аккаунт @{me['username']}  {'(пробный режим)' if DRY else ''}"
           f"  нейросеть: {'вкл (' + ai.MODEL + ')' if ai.enabled() else 'выкл'}")
-    errors = 0
-    for name, fn in (("Комментарии", handle_comments), ("Директ", handle_dms)):
-        try:
-            print(f"{name}: ответов — {fn(me)}")
-        except RuntimeError as e:
-            errors += 1
-            print(f"{name}: ошибка — {e}")
+    start = time.monotonic()
+    errors = one_pass(me)
+    for n in range(2, PASSES + 1):
+        if time.monotonic() - start + GAP > LAST_START:
+            break  # не успеем до обрыва — следующую проверку сделает новый запуск
+        print(f"--- пауза {GAP // 60} мин, затем проверка №{n} ---", flush=True)
+        time.sleep(GAP)
+        errors = one_pass(me)
     sys.exit(1 if errors == 2 else 0)
 
 
