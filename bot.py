@@ -23,8 +23,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import ai
-from replies import (COMPETITORS, HIDE_MODE, PRIVATE_REPLY_CATALOG, classify_comment, classify_dm,
-                     foreign_contact, is_buyer, needs_ai, with_warning)
+from replies import (COMMENT_REPLY_NO_DM, COMPETITORS, HIDE_MODE, PRIVATE_REPLY_CATALOG, classify_comment,
+                     classify_dm, foreign_contact, is_buyer, mentions_dm, needs_ai, with_warning)
 
 API = "https://graph.facebook.com/v23.0"
 TOKEN = os.environ.get("IG_TOKEN", "").strip()
@@ -143,12 +143,18 @@ def handle_comments(me):
                     p = ai.dm_reply(text)
                     private = None if p is None else (p or private or PRIVATE_REPLY_CATALOG)
             text_preview = text.replace("\n", " ")[:60]
+            # Сначала личное сообщение: если оно не ушло, в комментарии не пишем «в директ»
+            dm_ok = user in dm_sent
+            if private and not dm_ok:
+                dm_ok = send(f"личное сообщение @{user}", "POST", f"{me['page']}/messages",
+                             body={"recipient": {"comment_id": c["id"]},
+                                   "message": {"text": with_warning(private)}})
+                if dm_ok:
+                    dm_sent.add(user)
+            if not dm_ok and mentions_dm(public):
+                public = COMMENT_REPLY_NO_DM
             ok = send(f"коммент @{user}: «{text_preview}» → {public}",
                       "POST", f"{c['id']}/replies", {"message": f"@{user} {public}"})
-            if ok and private and user not in dm_sent:
-                dm_sent.add(user)
-                send(f"   личное сообщение @{user}", "POST", f"{me['page']}/messages",
-                     body={"recipient": {"comment_id": c["id"]}, "message": {"text": with_warning(private)}})
             if ok and HIDE_MODE != "off" and is_buyer(text):
                 hide(c, user, "покупатель")
             done += 1
