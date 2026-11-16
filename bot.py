@@ -219,9 +219,9 @@ def handle_dms(me):
     return done
 
 
-PASSES = int(os.environ.get("PASSES", "2"))   # проверок за один запуск
-GAP = int(os.environ.get("GAP_SEC", "300"))   # пауза между проверками: 5 минут
-LAST_START = 6 * 60   # GitHub обрывает запуск через 8 минут — позже 6-й минуты не начинаем
+PASSES = int(os.environ.get("PASSES", "10"))  # проверок за один запуск
+GAP = int(os.environ.get("GAP_SEC", "60"))    # пауза между проверками: 1 минута
+LAST_START = 6.5 * 60  # GitHub обрывает запуск через 8 минут — позже 6,5 минуты не начинаем
 
 
 def one_pass(me):
