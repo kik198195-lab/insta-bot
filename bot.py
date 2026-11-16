@@ -33,6 +33,7 @@ POSTS = int(os.environ.get("POSTS", "15"))
 MAX_AGE = timedelta(hours=int(os.environ.get("MAX_AGE_H", "72")))
 NOW = datetime.now(timezone.utc)
 DM_WINDOW = timedelta(hours=24)  # Instagram разрешает писать только в течение 24 ч
+WARNING_MARK = "Я пишу только с этого аккаунта"  # есть в каждом сообщении бота
 HIDE_AGE = timedelta(days=30)    # скрываем комментарии не старше 30 дней
 HIDE_PER_RUN = 40                # не больше 40 скрытий за запуск (старые — постепенно)
 hidden_count = 0
@@ -164,8 +165,9 @@ def handle_comments(me):
 def handle_dms(me):
     convs = call("GET", f"{me['page']}/conversations", {
         "platform": "instagram",
-        "fields": "id,updated_time,messages.limit(20){id,from,message,created_time}",
-        "limit": 25,
+        # меньше данных за раз — иначе Instagram иногда отвечает HTTP 500 «reduce the amount of data»
+        "fields": "id,updated_time,messages.limit(10){id,from,message,created_time}",
+        "limit": 20,
     }).get("data", [])
     print(f"Переписок в директе проверено: {len(convs)}")
     done = 0
@@ -181,8 +183,15 @@ def handle_dms(me):
             continue
         mine = [x for x in msgs if x.get("from", {}).get("id") == me["id"]
                 or x.get("from", {}).get("username") == me["username"]]
-        if any(NOW - ts(x["created_time"]) < DM_WINDOW for x in mine):
-            continue  # сегодня уже общались — дальше отвечает человек
+        recent_mine = [x for x in mine if NOW - ts(x["created_time"]) < DM_WINDOW]
+        if recent_mine:
+            # Сегодня уже общались. Если последней писала Ильмира сама (без строки-предупреждения
+            # бота) — не вмешиваемся. Если писал бот — отвечаем на уточняющий вопрос клиента,
+            # но не больше 3 ответов бота за сутки, чтобы не зациклиться.
+            if WARNING_MARK not in mine[0].get("message", "") or len(recent_mine) >= 3:
+                print(f"   ждёт ответа Ильмиры: @{sender.get('username', sender.get('id'))}: "
+                      f"{last.get('message', '')[:60]}")
+                continue
         # все непрочитанные сообщения клиента после нашего последнего
         client_text = []
         for x in msgs:
